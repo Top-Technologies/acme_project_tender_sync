@@ -1,0 +1,20 @@
+<odoo>
+    <record id="project_creation_request_form" model="ir.ui.view">
+        <field name="name">approval.request.acme.project.creation</field>
+        <field name="model">approval.request</field>
+        <field name="inherit_id" ref="acme_project_approvals.approval_request_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_acme_open_created_project" type="object" string="Open Project"
+                        invisible="acme_kind != 'project_creation' or request_status != 'approved' or not acme_project_id"/>
+            </xpath>
+            <xpath expr="//field[@name='acme_kind']" position="after">
+                <field name="company_id" invisible="1"/>
+                <field name="acme_project_id" readonly="1" invisible="acme_kind != 'project_creation' or not acme_project_id"/>
+                <field name="acme_creation_order_id" invisible="acme_kind != 'project_creation'"
+                       required="acme_kind == 'project_creation'" readonly="request_status != 'new'"
+                       domain="[('state', 'in', ['draft', 'sent', 'sale']), ('company_id', '=', company_id), '|', ('x_tender_id', '!=', False), ('opportunity_id', '!=', False)]"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

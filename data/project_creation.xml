@@ -1,0 +1,8 @@
+<odoo noupdate="1">
+    <record id="category_project_creation" model="approval.category">
+        <field name="name">Project Creation Request</field>
+        <field name="acme_kind">project_creation</field>
+        <field name="company_id" ref="base.main_company"/>
+        <field name="approval_minimum">1</field>
+    </record>
+</odoo>

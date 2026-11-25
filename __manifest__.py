@@ -1,0 +1,1 @@
+{'name': 'ACME Project Tender Sync', 'version': '19.0.2.0.0', 'license': 'LGPL-3', 'depends': ['acme_project_core', 'sale_crm', 'acme_tender_management', 'acme_project_approvals'], 'data': ['views/tender_views.xml', 'views/project_views.xml', 'views/sale_order_views.xml', 'data/project_creation.xml', 'views/project_creation_views.xml'], 'application': False, 'installable': True}

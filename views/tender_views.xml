@@ -1,0 +1,49 @@
+<odoo>
+    <record id="tender_project_link" model="ir.ui.view">
+        <field name="name">crm.lead.tender_project_link</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="acme_tender_management.view_crm_lead_tender_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <field name="acme_has_registered_project" invisible="1"/>
+                <button name="action_acme_register_tender_project" type="object" string="Create Project"
+                        groups="acme_project_core.group_acme_edm" invisible="not x_is_tender or x_outcome_type != 'won' or acme_has_registered_project"/>
+                <button name="action_acme_open_source_project" type="object" string="Open Project"
+                        groups="acme_project_core.group_acme_edm" invisible="not x_is_tender or x_outcome_type != 'won' or not acme_has_registered_project"/>
+            </xpath>
+            <xpath expr="//sheet" position="inside">
+                <group string="Project Registration" groups="acme_project_core.group_acme_edm" invisible="not x_is_tender or x_outcome_type != 'won'">
+                    <field name="acme_handover_quote_id" domain="[('x_tender_id', '=', id), ('company_id', '=', company_id), ('state', 'in', ['draft', 'sent', 'sale'])]"
+                           readonly="acme_has_registered_project" options="{'no_create': True}"/>
+                    <field name="acme_agreement_reference" readonly="acme_has_registered_project"/>
+                    <field name="acme_handover_template_id" readonly="acme_has_registered_project" options="{'no_create': True}"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="crm_opportunity_project_link" model="ir.ui.view">
+        <field name="name">crm.lead.crm_opportunity_project_link</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <field name="acme_has_registered_project" invisible="1"/>
+                <field name="acme_is_won_stage" invisible="1"/>
+                <field name="x_is_tender" invisible="1"/>
+                <button name="action_acme_register_tender_project" type="object" string="Create Project"
+                        groups="acme_project_core.group_acme_edm" invisible="x_is_tender or type != 'opportunity' or not acme_is_won_stage or acme_has_registered_project"/>
+                <button name="action_acme_open_source_project" type="object" string="Open Project"
+                        groups="acme_project_core.group_acme_edm" invisible="x_is_tender or type != 'opportunity' or not acme_is_won_stage or not acme_has_registered_project"/>
+            </xpath>
+            <xpath expr="//sheet" position="inside">
+                <group string="Project Registration" groups="acme_project_core.group_acme_edm" invisible="x_is_tender or type != 'opportunity' or not acme_is_won_stage">
+                    <field name="acme_handover_quote_id" domain="[('opportunity_id', '=', id), ('company_id', '=', company_id), ('state', 'in', ['draft', 'sent', 'sale'])]"
+                           readonly="acme_has_registered_project" options="{'no_create': True}"/>
+                    <field name="acme_agreement_reference" readonly="acme_has_registered_project"/>
+                    <field name="acme_handover_template_id" readonly="acme_has_registered_project" options="{'no_create': True}"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,34 @@
+<odoo>
+    <record id="project_tender_source" model="ir.ui.view">
+        <field name="name">project.tender.source</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="acme_project_core.project_form"/>
+        <field name="arch" type="xml">
+            <field name="acme_order_id" position="attributes">
+                <attribute name="string">Contract Sales Order</attribute>
+            </field>
+            <field name="acme_order_id" position="before">
+                <field name="acme_project_source" readonly="1" invisible="not acme_project_source"/>
+            </field>
+            <field name="acme_contract_reference" position="attributes">
+                <attribute name="string">Agreement / Contract Reference</attribute>
+            </field>
+            <field name="acme_order_id" position="after">
+                <field name="acme_tender_id" readonly="1" invisible="not acme_tender_id"/>
+                <field name="acme_opportunity_id" readonly="1" invisible="not acme_opportunity_id"/>
+                <field name="acme_registration_quote_id" readonly="1" invisible="not acme_registration_quote_id or acme_registration_quote_id == acme_order_id"/>
+                <field name="acme_project_sequence" readonly="acme_lifecycle_state == 'verified'"/>
+                <field name="acme_lifecycle_state" readonly="1"/>
+                <div colspan="2" invisible="acme_lifecycle_state != 'created'"
+                     groups="acme_project_core.group_acme_edm">
+                    <button name="action_acme_verify_project" type="object" string="EDM Verify" class="btn-secondary"/>
+                </div>
+            </field>
+            <xpath expr="//page[@name='acme_summary']/field[@name='acme_summary_html']" position="after">
+                <group invisible="not acme_tender_id">
+                    <field name="acme_cost_budget" string="Internal Cost Build-up" readonly="1"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>
