@@ -28,6 +28,16 @@ class Tender(models.Model):
         for lead in self:
             lead.acme_has_registered_project = bool(lead._acme_existing_project())
 
+    def _acme_uses_sales_project_flow(self):
+        self.ensure_one()
+        # Sales CRM Custom is optional: never reference optional fields in a
+        # manifest, view, or @api.depends declaration.
+        return bool(not self.x_is_tender and 'x_is_project_sales' in self._fields
+                    and self.x_is_project_sales and 'x_project_record_id' in self._fields
+                    and 'x_sales_order_id' in self.env['project.project']._fields
+                    and 'x_project_opportunity_id' in self.env['project.project']._fields
+                    and 'x_project_id' in self.env['sale.order']._fields)
+
     def _acme_existing_project(self, document=None):
         self.ensure_one()
         lead = self.with_context(active_test=False)
@@ -36,6 +46,14 @@ class Tender(models.Model):
         if document:
             projects |= self.env['project.project'].with_context(active_test=False).search([
                 '|', ('acme_registration_quote_id', '=', document.id), ('acme_order_id', '=', document.id),
+            ])
+        if lead._acme_uses_sales_project_flow():
+            projects |= lead.x_project_record_id
+            if document:
+                projects |= document.x_project_id
+            # Also discover archived/older records carrying the native source link.
+            projects |= self.env['project.project'].with_context(active_test=False).search([
+                ('x_project_opportunity_id', '=', lead.id),
             ])
         return projects
 
@@ -79,6 +97,8 @@ class Tender(models.Model):
         project = self._acme_existing_project()
         if len(project) != 1:
             raise UserError(_('Exactly one registered project is required to open it.'))
+        if self._acme_uses_sales_project_flow():
+            project = self._acme_register_from_agreement()
         return self.env['sale.order']._acme_registered_project_action(project)
 
     def _acme_check_agreement_document(self, document):
@@ -99,9 +119,14 @@ class Tender(models.Model):
         selected = self.acme_handover_quote_id
         if document:
             self._acme_check_agreement_document(document)
-        projects = self._acme_existing_project(document)
+        projects = (self.sudo()._acme_existing_project(document.sudo() if document else None).with_env(self.env)
+                    if self._acme_uses_sales_project_flow() else self._acme_existing_project(document))
         if len(projects) > 1:
             raise UserError(_('Multiple projects are already linked to this agreement. Resolve the duplicate links.'))
+        if self._acme_uses_sales_project_flow():
+            if not projects:
+                raise UserError(_('Confirm the Project Sales order first. Sales CRM creates the Operations Project; ACME will reuse it.'))
+            return self._acme_adopt_sales_project(projects, document or selected)
         if projects:
             projects.check_access('read')
             return projects
@@ -130,6 +155,68 @@ class Tender(models.Model):
         if not code:
             raise UserError(_('Configure the ACME project registration sequence.'))
         return self._acme_create_registered_project(document, templates, code, lines)
+
+    def _acme_adopt_sales_project(self, project, document=None):
+        """Register the Sales CRM-owned project, never create or initialize its BOQ.
+
+        Called only from the existing registration/approval workflow or the
+        authorized BOQ import. Callers serialize on the originating CRM lead
+        before taking the project lock.
+        """
+        self.ensure_one()
+        project.ensure_one()
+        self._acme_check_won_project_source()
+        project.check_access('read')
+        if not self._acme_uses_sales_project_flow():
+            raise UserError(_('This is not a Sales CRM Project Sales opportunity.'))
+        document = document or project.x_sales_order_id
+        if not document:
+            raise UserError(_('The Sales CRM project has no originating confirmed Sales Order.'))
+        self._acme_check_agreement_document(document)
+        if (document.state != 'sale' or not document._acme_is_sales_project_order()
+                or document.x_project_id != project or project.x_sales_order_id != document
+                or project.x_project_opportunity_id != self
+                or (self.x_project_record_id and self.x_project_record_id != project)
+                or project.company_id != self.company_id or not project.active
+                or project.partner_id.commercial_partner_id != document.partner_id.commercial_partner_id
+                or project.acme_tender_id
+                or (project.acme_opportunity_id and project.acme_opportunity_id != self)
+                or (project.acme_registration_quote_id and project.acme_registration_quote_id != document)
+                or (project.acme_order_id and project.acme_order_id != document)):
+            raise UserError(_('The Sales CRM project, confirmed order, opportunity, company or customer links conflict. Reconcile the existing records; no second project will be created.'))
+        if (project.acme_opportunity_id == self and project.acme_order_id == document
+                and project.acme_registration_quote_id == document and project.acme_project_sequence
+                and project.acme_lifecycle_state != 'draft'):
+            return project
+        project._acme_lock_boq()
+        project._acme_check_registration_unlocked()
+        if (project.acme_boq_initialized or project.acme_boq_ids or project.acme_boq_history_ids
+                or project.acme_certificate_ids):
+            raise UserError(_('This existing Sales project already has BOQ data or billing history. Reconcile its registration manually; the existing baseline will not be replaced.'))
+        currency = document.currency_id
+        if ((project.acme_contract_amount and currency.compare_amounts(project.acme_contract_amount, document.amount_untaxed))
+                or (project.acme_contract_total and currency.compare_amounts(project.acme_contract_total, document.amount_total))):
+            raise UserError(_('The existing project contract values differ from the confirmed Sales Order.'))
+        code = project.acme_project_sequence or self.env['ir.sequence'].with_company(self.company_id).next_by_code('acme.project.code')
+        if not code:
+            raise UserError(_('Configure the ACME project registration sequence.'))
+        project.with_context(acme_agreement_registration_token=_AGREEMENT_REGISTRATION_TOKEN).write({
+            'acme_opportunity_id': self.id,
+            'acme_registration_quote_id': document.id,
+            'acme_order_id': document.id,
+            'acme_project_sequence': code,
+            'acme_contract_reference': project.acme_contract_reference or self.acme_agreement_reference or document.client_order_ref or document.name,
+            'acme_contract_currency_id': currency.id,
+            'acme_contract_amount': document.amount_untaxed,
+            'acme_contract_total': document.amount_total,
+            'acme_boq_vat_rate': 100 * document.amount_tax / document.amount_untaxed if document.amount_untaxed else 0,
+        })
+        if not project.account_id:
+            project._create_analytic_account()
+        if project.acme_lifecycle_state == 'draft':
+            project._acme_set_registration_state('created')
+        project.message_post(body=_('Existing Sales CRM Operations Project registered from %s. Load the agreed BOQ before verification.', document.display_name))
+        return project
 
     def _acme_create_registered_project(self, document, template, code, lines):
         customer = self.partner_id

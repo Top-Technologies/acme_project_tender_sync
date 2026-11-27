@@ -18,6 +18,39 @@ class SaleOrder(models.Model):
                 or order.project_id or order.order_line.project_id
             )
 
+    def _acme_is_sales_project_order(self):
+        self.ensure_one()
+        return bool(not ('acme_addendum_variation_id' in self._fields and self.acme_addendum_variation_id)
+                    and not self.x_tender_id
+                    and 'x_sales_type' in self._fields and self.x_sales_type == 'project'
+                    and self.opportunity_id and self.opportunity_id._acme_uses_sales_project_flow())
+
+    def action_confirm(self):
+        mixed = self.filtered(lambda order: order.state in ('draft', 'sent') and order.x_tender_id
+                              and 'x_sales_type' in order._fields and order.x_sales_type == 'project'
+                              and order.opportunity_id and 'x_is_project_sales' in order.opportunity_id._fields
+                              and order.opportunity_id.x_is_project_sales)
+        if mixed:
+            raise UserError(_('Choose either the traditional Tender route or the CRM Project Sales route for the original contract; the order currently uses both.'))
+        orders = self.filtered(lambda order: order.state in ('draft', 'sent') and order._acme_is_sales_project_order())
+        if orders:
+            leads = orders.opportunity_id.sorted('id')
+            if len(leads) != len(orders):
+                raise UserError(_('Confirm only one original Project Sales contract per opportunity. Use the authorized variation/addendum workflow for changes.'))
+            # Same lock order as ACME registration. Upstream Sales CRM writes
+            # the originating opportunity and order links in this transaction.
+            for lead in leads:
+                lead.check_access('read')
+                self.env.cr.execute('UPDATE crm_lead SET id = id WHERE id = %s', [lead.id])
+            self.env.invalidate_all()
+            for order in orders:
+                lead = order.opportunity_id
+                # Read-only duplicate detection must include projects hidden by record rules.
+                projects = lead.sudo()._acme_existing_project(order.sudo())
+                if len(projects) > 1 or (projects and (order.sudo().x_project_id != projects or projects.x_sales_order_id != order.sudo())):
+                    raise UserError(_('This opportunity already has a project for a different or unregistered agreement. Resolve the existing project links before confirming another original contract.'))
+        return super().action_confirm()
+
     def action_acme_create_project(self):
         self.ensure_one()
         self.check_access('write')

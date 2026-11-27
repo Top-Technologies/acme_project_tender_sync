@@ -67,7 +67,8 @@ class ProjectTenderSource(models.Model):
                     raise ValidationError(_('The contract document must belong to the source CRM Opportunity.'))
 
     def write(self, vals):
-        if {'acme_registration_quote_id', 'acme_opportunity_id'}.intersection(vals):
+        if ({'acme_registration_quote_id', 'acme_opportunity_id'}.intersection(vals)
+                and self.env.context.get('acme_agreement_registration_token') is not _AGREEMENT_REGISTRATION_TOKEN):
             raise AccessError(_('The originating agreement is set by project registration.'))
         if 'acme_lifecycle_state' in vals and self.env.context.get('acme_registration_token') is not _REGISTRATION_TOKEN:
             raise UserError(_('Use the project registration actions to change the registration state.'))
@@ -102,6 +103,9 @@ class ProjectTenderSource(models.Model):
             raise AccessError(_('Only an EDM can verify a project.'))
         if self.acme_lifecycle_state != 'created':
             raise UserError(_('Only a Created project can be verified.'))
+        if (self.acme_opportunity_id and self.acme_opportunity_id._acme_uses_sales_project_flow()
+                and not self.acme_boq_initialized):
+            raise UserError(_('Load or finalize the contract BOQ before verifying this Project Sales project.'))
         self._acme_set_registration_state('verified')
 
 
